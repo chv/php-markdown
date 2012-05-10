@@ -645,7 +645,7 @@ class Markdown_Parser {
 
 		"doItalicsAndBold"    =>  50,
 		"doHardBreaks"        =>  60,
-		);
+       );
 
 	function runSpanGamut($text) {
 	#
@@ -661,7 +661,7 @@ class Markdown_Parser {
 	
 	function doHardBreaks($text) {
 		# Do hard breaks:
-		return preg_replace_callback('/ {2,}\n/', 
+		return preg_replace_callback('/\n/', 
 			array(&$this, '_doHardBreaks_callback'), $text);
 	}
 	function _doHardBreaks_callback($matches) {
@@ -1586,7 +1586,7 @@ class Markdown_Parser {
 				return $this->hashPart("&#". ord($token{1}). ";");
 			case "`":
 				# Search for end marker in remaining text.
-				if (preg_match('/^(.*?[^`])'.preg_quote($token).'(?!`)(.*)$/sm', 
+				if ($token != '```' and preg_match('/^(.*?[^`])'.preg_quote($token).'(?!`)(.*)$/sm', 
 					$str, $matches))
 				{
 					$str = $matches[2];
@@ -1711,10 +1711,17 @@ class MarkdownExtra_Parser extends Markdown_Parser {
 			"doFencedCodeBlocks" => 5,
 			"doTables"           => 15,
 			"doDefLists"         => 45,
+            "doSyntaxHighlightingCodeBlocks" => 7,
+            "doTodoBlocks"                   => 8,
 			);
 		$this->span_gamut += array(
 			"doFootnotes"        => 5,
 			"doAbbreviations"    => 70,
+            
+            # Make links out of things like `be6a8cc1c1ecfe9489fb51e4869af15a13fc2cd2`
+            "doGitAutoLinks"      =>  66,
+            # Make links out of things like `#252`
+            "doMingleAutoLinks"   =>  67,
 			);
 		
 		parent::Markdown_Parser();
@@ -2838,6 +2845,117 @@ class MarkdownExtra_Parser extends Markdown_Parser {
 		} else {
 			return $matches[0];
 		}
+	}
+    
+    
+    function doSyntaxHighlightingCodeBlocks($text) {
+	#
+	# Adding the syntax highlighted code block syntax to regular Markdown:
+	#
+	# ```language
+	# Code block
+	# ```
+	#
+		$less_than_tab = $this->tab_width;
+		
+		$text = preg_replace_callback('{
+				(?:\n|\A)
+				# 1: Opening marker
+				(
+					`{3,} # Marker: three tilde or more.
+				)
+				(
+                    [a-z]+
+                )
+                \n # Whitespace and newline following marker.
+				
+				# 2: Content
+				(
+					(?>
+						(?!\1 [ ]* \n)	# Not a closing marker.
+						.*\n+
+					)+
+				)
+				
+				# Closing marker.
+				\1 [ ]* \n
+			}xm',
+			array(&$this, '_doSyntaxHighlightingCodeBlocks_callback'), $text);
+
+		return $text;
+	}
+	function _doSyntaxHighlightingCodeBlocks_callback($matches) {
+        $language = $matches[2];
+		$codeblock = $matches[3];
+		$codeblock = htmlspecialchars($codeblock, ENT_NOQUOTES);
+		$codeblock = preg_replace_callback('/^\n+/',
+			array(&$this, '_doFencedCodeBlocks_newlines'), $codeblock);
+		$codeblock = "<pre class=\"brush: {$language}\">$codeblock</pre>";
+		return "\n\n".$this->hashBlock($codeblock)."\n\n";
+	}
+     
+    
+    function doTodoBlocks($text) {
+	#
+	# Adding the TODO block syntax to regular Markdown:
+	#
+	# TODO: bla bla
+	#       bla bla
+	# 
+	#
+		$less_than_tab = $this->tab_width;
+		
+        
+        # Link defs are in the form: [^id]: url "optional title"
+		$text = preg_replace_callback('{
+			^[ ]{0,'.$less_than_tab.'}\TODO:
+			  [ ]*
+			  \n?					# maybe *one* newline
+			(						# text = $1 (no blank lines allowed)
+				(?:					
+					.+				# actual text
+				|
+					\n				# newlines but 
+					(?!\[\^.+?\]:\s)# negative lookahead for footnote marker.
+					(?!\n+[ ]{0,3}\S)# ensure line is not blank and followed 
+									# by non-indented content
+				)*
+			)		
+			}xm',
+			array(&$this, '_doTodoBlocks_callback'), $text);
+
+		return $text;
+	}
+	function _doTodoBlocks_callback($matches) {
+        $text = "__TODO:__\n\n" . ltrim($matches[1]);
+        $text = $this->runBlockGamut($text);		# recurse
+		$block = "<blockquote class=\"todo\">{$text}</blockquote>";
+		return "\n\n".$this->hashBlock($block)."\n\n";
+	}
+    
+	function doGitAutoLinks($text) {
+		$text = preg_replace_callback('/([a-f0-9]{40})/', 
+			array(&$this, '_doGitAutoLinks_callback'), $text);
+		return $text;
+    }
+	function _doGitAutoLinks_callback($matches) {
+        $gitWebHost = 'git.bln.int.planetromeo.com';
+        $gitProject = 'planetromeo-source.git';
+		$commit = $matches[1];
+        $commitName = substr($commit, 0, 7);
+		$link = "<a href=\"http://{$gitWebHost}/?p={$gitProject};a=commit;h={$commit}\">{$commitName}</a>";
+		return $this->hashPart($link);
+	}
+    
+    function doMingleAutoLinks($text) {
+		$text = preg_replace_callback('/#([0-9]+)/', 
+			array(&$this, '_doMingleAutoLinks_callback'), $text);
+		return $text;
+    }
+	function _doMingleAutoLinks_callback($matches) {
+        $mingleCardBaseUrl = 'http://project.bln.int.planetromeo.com/projects/scrum/cards/';
+		$link = "<a href=\"{$mingleCardBaseUrl}{$matches[1]}\">#{$matches[1]}</a>";
+		return $this->hashPart($link);
 	}
 
 }
