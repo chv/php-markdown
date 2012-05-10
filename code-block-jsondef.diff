@@ -1,0 +1,58 @@
+diff --git a/markdown.php b/markdown.php
+index 67294cb..a7091c7 100644
+--- a/markdown.php
++++ b/markdown.php
+@@ -23,7 +23,7 @@ define( 'MARKDOWN_VERSION',  "1.0.1o" ); # Sun 8 Jan 2012
+ @define( 'MARKDOWN_EMPTY_ELEMENT_SUFFIX',  " />");
+ 
+ # Define the width of a tab for code blocks.
+-@define( 'MARKDOWN_TAB_WIDTH',     4 );
++@define( 'MARKDOWN_TAB_WIDTH',     2 );
+ 
+ 
+ #
+@@ -1566,7 +1566,17 @@ class Markdown_Parser {
+ 					$str, $matches))
+ 				{
+ 					$str = $matches[2];
+-					$codespan = $this->makeCodeSpan($matches[1]);
++                    $block = $matches[1];
++                    if ($token == '```') {
++                        // code block, searching for supported language
++                        if (preg_match('/^([a-z]+)\n(.*)$/s', $block, $matches)) {
++                            if (in_array($matches[1], array('jsondef'))) {
++                                return $this->hashPart($this->makeJsonDef($matches[2]));
++                                //var_dump('handleSpanToken JSONDOC BLOCK', $token, $str, $matches);    
++                            }
++                        }
++                    }
++					$codespan = $this->makeCodeSpan($block);
+ 					return $this->hashPart($codespan);
+ 				}
+ 				return $token; // return as text since no ending marker found.
+@@ -1575,6 +1585,25 @@ class Markdown_Parser {
+ 		}
+ 	}
+ 
++    /**
++     * Quick and dirty JSON Definition Syntax Highlightening
++     * TODO: Use a proper library instead!!1
++     */
++    private function makeJsonDef($code) {
++        $code = preg_replace(
++                    array(
++                        '/\/\/\s?(.*)\n/e',
++                        '/([{},\[\]])/',
++                        '/(".*?")/',
++                        '/_([a-zA-Z]+)_/'), 
++                    array(
++                        "'<span class=\'comment\'>// '.'$1'.'</span>\n'",
++                        '<span class=\'syntax0\'>$1</span>',
++                        '<span class=\'syntax1\'>$1</span>',
++                        '<em>$1</em>'), 
++                $code);
++        return '<code class="language-jsondef"><pre>' . $code . '</pre></code>';
++    }
+ 
+ 	function outdent($text) {
+ 	#
